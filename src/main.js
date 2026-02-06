@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // --- DOM
 const $coins = document.getElementById('coins');
@@ -24,13 +25,42 @@ sun.position.set(12, 18, 10);
 sun.castShadow = false;
 scene.add(sun);
 
-// --- Materials
+// --- Materials (fallbacks)
 const matGround = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 1, metalness: 0 });
 const matPlatform = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 1, metalness: 0 });
 const matPlayer = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.7 });
 const matCoin = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.25, metalness: 0.2, emissive: 0x3b2f0b, emissiveIntensity: 0.35 });
 const matEnemy = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.8 });
 const matGoal = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.6, emissive: 0x0a2a14, emissiveIntensity: 0.25 });
+
+// --- Assets
+const loader = new GLTFLoader();
+const ASSETS = {
+  character: '/assets/kenney/models/character.glb',
+  coin: '/assets/kenney/models/coin.glb',
+  flag: '/assets/kenney/models/flag.glb',
+  platform: '/assets/kenney/models/platform.glb',
+  platformMedium: '/assets/kenney/models/platform-medium.glb',
+  platformLarge: '/assets/kenney/models/platform-large.glb',
+  brick: '/assets/kenney/models/brick.glb',
+  blockCoin: '/assets/kenney/models/block-coin.glb',
+};
+
+const glbCache = new Map();
+async function loadGLB(url){
+  if (glbCache.has(url)) return glbCache.get(url).clone(true);
+  const gltf = await loader.loadAsync(url);
+  const root = gltf.scene;
+  // Normalize materials to be non-black if any are missing
+  root.traverse((obj) => {
+    if (!obj.isMesh) return;
+    obj.castShadow = false;
+    obj.receiveShadow = true;
+    if (!obj.material) obj.material = new THREE.MeshStandardMaterial({ color: 0xffffff });
+  });
+  glbCache.set(url, root);
+  return root.clone(true);
+}
 
 // --- Helpers
 const v3 = (x=0,y=0,z=0) => new THREE.Vector3(x,y,z);
@@ -72,11 +102,16 @@ function addSolid(mesh){
   solids.push(mesh);
 }
 
-function addCoin(pos){
-  const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.10, 10, 18), matCoin);
+async function addCoin(pos){
+  let mesh;
+  try {
+    mesh = await loadGLB(ASSETS.coin);
+  } catch {
+    mesh = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.10, 10, 18), matCoin);
+    mesh.rotation.x = Math.PI/2;
+  }
   mesh.position.copy(pos);
-  mesh.rotation.x = Math.PI/2;
-  mesh.userData.radius = 0.45;
+  mesh.userData.radius = 0.55;
   scene.add(mesh);
   coins.push(mesh);
 }
@@ -92,15 +127,20 @@ function addEnemy(pos, range=3.0, speed=1.2){
   enemies.push(mesh);
 }
 
-function addGoal(pos){
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 2.4, 12), matGoal);
+async function addGoal(pos){
+  let mesh;
+  try {
+    mesh = await loadGLB(ASSETS.flag);
+  } catch {
+    mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 2.4, 12), matGoal);
+  }
   mesh.position.copy(pos);
-  mesh.userData.radius = 0.6;
+  mesh.userData.radius = 0.9;
   scene.add(mesh);
   goal = mesh;
 }
 
-function buildLevel(){
+async function buildLevel(){
   // Clear
   for (const m of [...solids, ...coins, ...enemies]) scene.remove(m);
   solids.length = 0; coins.length = 0; enemies.length = 0;
@@ -114,21 +154,35 @@ function buildLevel(){
 
   // Platforms (simple path)
   const platformSpecs = [
-    [ 0, 1.2, 0,  4, 0.6, 4 ],
-    [ 5, 2.3, 0,  4, 0.6, 4 ],
-    [ 9, 3.4, 0,  3, 0.6, 4 ],
-    [ 13, 4.6, 0, 3, 0.6, 4 ],
-    [ 17, 5.2, 0, 4, 0.6, 4 ],
-    [ 22, 4.1, 0, 4, 0.6, 4 ],
-    [ 27, 3.0, 0, 5, 0.6, 4 ],
-    [ 33, 2.2, 0, 4, 0.6, 4 ],
-    [ 38, 2.2, 0, 4, 0.6, 4 ],
-    [ 43, 3.0, 0, 4, 0.6, 4 ],
+    // x, y, z, w, h, d, kind
+    [ 0, 1.2, 0,  4, 0.6, 4, 'medium' ],
+    [ 5, 2.3, 0,  4, 0.6, 4, 'medium' ],
+    [ 9, 3.4, 0,  3, 0.6, 4, 'small' ],
+    [ 13, 4.6, 0, 3, 0.6, 4, 'small' ],
+    [ 17, 5.2, 0, 4, 0.6, 4, 'medium' ],
+    [ 22, 4.1, 0, 4, 0.6, 4, 'medium' ],
+    [ 27, 3.0, 0, 5, 0.6, 4, 'large' ],
+    [ 33, 2.2, 0, 4, 0.6, 4, 'medium' ],
+    [ 38, 2.2, 0, 4, 0.6, 4, 'medium' ],
+    [ 43, 3.0, 0, 4, 0.6, 4, 'medium' ],
   ];
-  for (const [x,y,z,w,h,d] of platformSpecs){
-    const p = makeBox(w,h,d, matPlatform);
-    p.position.set(x,y,z);
-    addSolid(p);
+  for (const [x,y,z,w,h,d,kind] of platformSpecs){
+    const collider = makeBox(w,h,d, matPlatform);
+    collider.position.set(x,y,z);
+    collider.visible = false; // use model for visuals
+    addSolid(collider);
+
+    // Visual model (best effort)
+    try {
+      const url = kind === 'large' ? ASSETS.platformLarge : (kind === 'small' ? ASSETS.platform : ASSETS.platformMedium);
+      const vis = await loadGLB(url);
+      vis.position.set(x, y - 0.3, z);
+      vis.scale.setScalar(1.0);
+      scene.add(vis);
+    } catch {
+      // fallback: show collider
+      collider.visible = true;
+    }
   }
 
   // Coins
@@ -144,20 +198,35 @@ function buildLevel(){
     v3(38, 3.2, 0),
     v3(43, 4.0, 0),
   ];
-  for (const p of coinPositions) addCoin(p);
+  for (const p of coinPositions) await addCoin(p);
 
-  // Enemies
+  // Enemies (still simple boxes for gameplay)
   addEnemy(v3(9, 4.3, 0), 1.5, 1.0);
   addEnemy(v3(27, 3.9, 0), 2.2, 1.3);
 
   // Goal
-  addGoal(v3(47, 4.2, 0));
+  await addGoal(v3(47, 4.2, 0));
 }
 
 // --- Player
+// Invisible collider + visible model (best effort)
 const player = makeBox(0.9, 1.2, 0.9, matPlayer);
+player.visible = false;
 player.position.set(-2, 1.5, 0);
 scene.add(player);
+
+let playerModel = null;
+async function ensurePlayerModel(){
+  if (playerModel) return;
+  try {
+    playerModel = await loadGLB(ASSETS.character);
+    playerModel.scale.setScalar(1.0);
+    scene.add(playerModel);
+  } catch {
+    // fallback: show collider
+    player.visible = true;
+  }
+}
 
 const playerState = {
   vel: v3(0,0,0),
@@ -169,6 +238,12 @@ const playerState = {
 
 const spawn = v3(-2, 1.6, 0);
 
+function syncPlayerModel(){
+  if (!playerModel) return;
+  playerModel.position.copy(player.position);
+  playerModel.position.y -= 0.6;
+}
+
 function respawn(){
   player.position.copy(spawn);
   playerState.vel.set(0,0,0);
@@ -176,6 +251,7 @@ function respawn(){
   playerState.deaths++;
   playerState.finished = false;
   $deaths.textContent = String(playerState.deaths);
+  syncPlayerModel();
 }
 
 function resetRun(){
@@ -346,7 +422,8 @@ addEventListener('resize', () => {
 });
 
 // --- Main loop
-buildLevel();
+await ensurePlayerModel();
+await buildLevel();
 $coins.textContent = '0';
 $deaths.textContent = '0';
 
@@ -382,6 +459,7 @@ function tick(){
   player.position.x += playerState.vel.x * dt;
   player.position.y += playerState.vel.y * dt;
   player.position.z += playerState.vel.z * dt;
+  syncPlayerModel();
 
   // Constrain z (2.5D)
   player.position.z = clamp(player.position.z, -2.0, 2.0);
